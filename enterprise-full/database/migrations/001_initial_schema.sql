@@ -1,0 +1,94 @@
+-- Initial SQL migration for enterprise-full
+-- Run: mysql -u root -p pos_enterprise < 001_initial_schema.sql
+
+CREATE DATABASE IF NOT EXISTS pos_enterprise CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE pos_enterprise;
+
+CREATE TABLE roles (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description TEXT,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE users (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role_uuid CHAR(36) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_users_role FOREIGN KEY (role_uuid) REFERENCES roles(uuid) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE products (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  sku VARCHAR(100) NOT NULL UNIQUE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  price DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE product_images (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  product_uuid CHAR(36) NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  storage_path VARCHAR(500) NOT NULL,
+  thumb_path VARCHAR(500) NOT NULL,
+  is_primary TINYINT NOT NULL DEFAULT 0,
+  mime VARCHAR(100) DEFAULT NULL,
+  filesize BIGINT NOT NULL DEFAULT 0,
+  hash CHAR(64) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pi_product FOREIGN KEY (product_uuid) REFERENCES products(uuid) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE sales (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  invoice_no VARCHAR(100) NOT NULL UNIQUE,
+  cashier_uuid CHAR(36) NOT NULL,
+  subtotal DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  total DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE sale_items (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  sale_uuid CHAR(36) NOT NULL,
+  product_uuid CHAR(36) NOT NULL,
+  quantity DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  unit_price DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  total DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_si_sale FOREIGN KEY (sale_uuid) REFERENCES sales(uuid) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE sync_queue (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid CHAR(36) NOT NULL,
+  entity VARCHAR(150) NOT NULL,
+  entity_id CHAR(36) NULL,
+  operation ENUM('create','update','delete') NOT NULL,
+  payload JSON NOT NULL,
+  status ENUM('pending','in_progress','done','failed') NOT NULL DEFAULT 'pending',
+  attempts INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid CHAR(36) NOT NULL,
+  entity VARCHAR(150) NOT NULL,
+  entity_id CHAR(36) NULL,
+  action VARCHAR(50) NOT NULL,
+  user_uuid CHAR(36) NULL,
+  old_value LONGTEXT NULL,
+  new_value LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
