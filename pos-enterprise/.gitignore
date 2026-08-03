@@ -1,0 +1,5 @@
+storage/images/
+storage/backups/
+logs/
+*.zip
+.env

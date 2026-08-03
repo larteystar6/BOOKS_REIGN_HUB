@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Product Editor</title>
+<link rel='stylesheet' href='assets/css/app.css'>
+</head>
+<body>
+  <h1>Product Editor</h1>
+  <div>
+    <label>Product UUID: <input id='productUUID' placeholder='Enter or create product UUID' /></label>
+    <button id='loadImages'>Load Images</button>
+  </div>
+
+  <section id='uploader'>
+    <h2>Upload Images</h2>
+    <div id='dropzone' style='width:100%;height:160px;border:2px dashed #888;display:flex;align-items:center;justify-content:center'>
+      Drop images here or click to select
+    </div>
+    <input id='fileInput' type='file' multiple accept='image/*' style='display:none' />
+    <div id='preview'></div>
+    <button id='uploadBtn'>Upload Selected</button>
+  </section>
+
+  <section id='existing'>
+    <h2>Existing Images</h2>
+    <div id='imagesList' style='display:flex;gap:12px;flex-wrap:wrap'></div>
+  </section>
+
+<script>
+/* product.html client script */
+async function compressImageFile(file, maxW=1600, maxH=1600, quality=0.8) {
+  return new Promise((resolve,reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w=img.width, h=img.height;
+        if(w>maxW){ h = Math.round(h * maxW / w); w = maxW; }
+        if(h>maxH){ w = Math.round(w * maxH / h); h = maxH; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+let filesToUpload = [];
+
+dropzone.addEventListener('click', ()=>fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.background='#f7f7f7'; });
+dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.style.background=''; });
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.style.background='';
+  const f = Array.from(e.dataTransfer.files).filter(x => x.type.startsWith('image/'));
+  addFiles(f);
+});
+fileInput.addEventListener('change', e => addFiles(Array.from(e.target.files)));
+
+function addFiles(files) {
+  files.forEach(f=>{
+    filesToUpload.push(f);
+    const img = document.createElement('img');
+    img.style.width='120px'; img.style.height='auto'; img.style.objectFit='cover';
+    const reader = new FileReader();
+    reader.onload = ev => img.src = ev.target.result;
+    reader.readAsDataURL(f);
+    preview.appendChild(img);
+  });
+}
+
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const productUUID = document.getElementById('productUUID').value.trim();
+  if(!productUUID) return alert('Enter product UUID first');
+  if(filesToUpload.length === 0) return alert('Select files to upload');
+  // compress client-side and upload
+  const form = new FormData();
+  form.append('product_uuid', productUUID);
+  for(const f of filesToUpload) {
+    const blob = await compressImageFile(f,1200,1200,0.78);
+    form.append('images[]', blob, f.name);
+  }
+  const resp = await fetch('/pos-enterprise/api/uploads.php', { method:'POST', body: form });
+  const j = await resp.json();
+  if(j.success) {
+    alert('Uploaded ' + (j.uploaded?.length || 0) + ' images');
+    filesToUpload = []; preview.innerHTML='';
+    loadImages();
+  } else {
+    alert('Upload error: ' + JSON.stringify(j));
+  }
+});
+
+document.getElementById('loadImages').addEventListener('click', loadImages);
+async function loadImages() {
+  const productUUID = document.getElementById('productUUID').value.trim();
+  if(!productUUID) return alert('Enter product UUID first');
+  const el = document.getElementById('imagesList'); el.innerHTML='';
+  const resp = await fetch('/pos-enterprise/api/products.php?action=images&product_uuid=' + encodeURIComponent(productUUID));
+  const j = await resp.json();
+  for(const im of j.images || []) {
+    const d = document.createElement('div'); d.style.border='1px solid #ccc'; d.style.padding='8px';
+    const img = document.createElement('img'); img.src = '/' + im.thumb_path; img.style.width='140px'; img.style.height='auto';
+    d.appendChild(img);
+    const btnPrimary = document.createElement('button'); btnPrimary.textContent = im.is_primary ? 'Primary' : 'Set Primary';
+    btnPrimary.addEventListener('click', async ()=> {
+      await fetch('/pos-enterprise/api/products.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'set_primary', image_uuid: im.uuid})});
+      loadImages();
+    });
+    d.appendChild(btnPrimary);
+    const btnDel = document.createElement('button'); btnDel.textContent='Delete';
+    btnDel.addEventListener('click', async ()=> {
+      await fetch('/pos-enterprise/api/products.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'delete', image_uuid: im.uuid})});
+      loadImages();
+    });
+    d.appendChild(btnDel);
+    el.appendChild(d);
+  }
+}
+</script>
+</body>
+</html>

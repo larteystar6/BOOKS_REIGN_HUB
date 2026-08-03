@@ -1,0 +1,153 @@
+-- pos_enterprise schema (essential portions)
+CREATE DATABASE IF NOT EXISTS pos_enterprise CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE pos_enterprise;
+
+CREATE TABLE roles (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description TEXT,
+  status TINYINT NOT NULL DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
+  created_by CHAR(36) NULL,
+  updated_by CHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE users (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  full_name VARCHAR(255) DEFAULT NULL,
+  phone VARCHAR(50) DEFAULT NULL,
+  role_uuid CHAR(36) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
+  sync_status TINYINT NOT NULL DEFAULT 0,
+  last_sync_time DATETIME NULL,
+  created_by CHAR(36) NULL,
+  updated_by CHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_users_email(email),
+  INDEX idx_users_role(role_uuid),
+  CONSTRAINT fk_users_role FOREIGN KEY (role_uuid) REFERENCES roles(uuid) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE categories (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  parent_uuid CHAR(36) NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
+  created_by CHAR(36) NULL,
+  updated_by CHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_categories_parent FOREIGN KEY (parent_uuid) REFERENCES categories(uuid) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE products (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  sku VARCHAR(100) NOT NULL UNIQUE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  category_uuid CHAR(36) NULL,
+  price DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  cost DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  min_stock INT NOT NULL DEFAULT 0,
+  max_stock INT NOT NULL DEFAULT 0,
+  allow_negative_stock TINYINT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
+  sync_status TINYINT NOT NULL DEFAULT 0,
+  last_sync_time DATETIME NULL,
+  created_by CHAR(36) NULL,
+  updated_by CHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_products_sku(sku),
+  INDEX idx_products_name(name),
+  CONSTRAINT fk_products_category FOREIGN KEY (category_uuid) REFERENCES categories(uuid) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE product_images (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  product_uuid CHAR(36) NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  storage_path VARCHAR(500) NOT NULL,
+  thumb_path VARCHAR(500) NOT NULL,
+  is_primary TINYINT NOT NULL DEFAULT 0,
+  mime VARCHAR(100) DEFAULT NULL,
+  filesize BIGINT NOT NULL DEFAULT 0,
+  width INT DEFAULT NULL,
+  height INT DEFAULT NULL,
+  hash CHAR(64) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_by CHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pi_product FOREIGN KEY (product_uuid) REFERENCES products(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_pi_product(product_uuid),
+  INDEX idx_pi_hash(hash)
+) ENGINE=InnoDB;
+
+CREATE TABLE sales (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  invoice_no VARCHAR(100) NOT NULL UNIQUE,
+  customer_uuid CHAR(36) NULL,
+  cashier_uuid CHAR(36) NOT NULL,
+  subtotal DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  discount DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  tax DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  total DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  status TINYINT NOT NULL DEFAULT 1,
+  payment_status TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE sale_items (
+  uuid CHAR(36) NOT NULL PRIMARY KEY,
+  sale_uuid CHAR(36) NOT NULL,
+  product_uuid CHAR(36) NOT NULL,
+  quantity DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  unit_price DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  total DECIMAL(18,4) NOT NULL DEFAULT 0.0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_si_sale FOREIGN KEY (sale_uuid) REFERENCES sales(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_si_product FOREIGN KEY (product_uuid) REFERENCES products(uuid) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE sync_queue (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid CHAR(36) NOT NULL,
+  entity VARCHAR(150) NOT NULL,
+  entity_id CHAR(36) NULL,
+  operation ENUM('create','update','delete') NOT NULL,
+  payload JSON NOT NULL,
+  status ENUM('pending','in_progress','done','failed') NOT NULL DEFAULT 'pending',
+  attempts INT NOT NULL DEFAULT 0,
+  last_attempt DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_sync_status(status),
+  INDEX idx_sync_entity(entity)
+) ENGINE=InnoDB;
+
+CREATE TABLE audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  uuid CHAR(36) NOT NULL,
+  entity VARCHAR(150) NOT NULL,
+  entity_id CHAR(36) NULL,
+  action VARCHAR(50) NOT NULL,
+  user_uuid CHAR(36) NULL,
+  device_info VARCHAR(255) NULL,
+  ip VARCHAR(45) NULL,
+  module VARCHAR(100) NULL,
+  old_value LONGTEXT NULL,
+  new_value LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_entity(entity),
+  INDEX idx_audit_user(user_uuid)
+) ENGINE=InnoDB;
